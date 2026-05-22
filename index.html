@@ -2693,7 +2693,145 @@ function AdminStats({ src, lang, ar }) {
       </Card>
     </div>
   );
+}function AdminStats({ src, lang, ar }) {
+  if (!src || src.length === 0) {
+    return <Card><p style={{ textAlign:"center", color:C.mu, padding:20 }}>No candidate data yet.</p></Card>;
+  }
+
+  /* ── Compute stats ── */
+  function count(arr) {
+    var m = {};
+    arr.forEach(function(v){ m[v] = (m[v]||0) + 1; });
+    return m;
+  }
+  function pct(n, total) { return total ? Math.round(n/total*100) : 0; }
+
+  var total = src.length;
+  var genders  = count(src.map(function(c){ return (c.profile&&c.profile.gender)||"Unknown"; }));
+  var ages     = count(src.map(function(c){ return (c.profile&&c.profile.age)||"Unknown"; }));
+  var regions  = count(src.map(function(c){ return (c.profile&&c.profile.region)||"Unknown"; }));
+  var edus     = count(src.map(function(c){ return (c.profile&&c.profile.edu)||"Unknown"; }));
+  var hollands = count(src.map(function(c){
+    var h = c.scores&&c.scores.h||{};
+    return Object.keys(h).sort(function(a,b){ return (h[b]||0)-(h[a]||0); })[0]||"?";
+  }));
+  var avgEmpl = Math.round(src.reduce(function(sum,c){
+    var s=c.scores&&c.scores.s||{};
+    var v=Object.values(s);
+    return sum+(v.length?v.reduce(function(a,b){return a+b;},0)/v.length:0);
+  },0)/total);
+
+  var HN = {R:"Realistic",I:"Investigative",A:"Artistic",S:"Social",E:"Enterprising",C:"Conventional"};
+  var HC = {R:"#4080e0",I:"#4080e0",A:"#d4a328",S:"#20b060",E:"#9050d0",C:"#20a0b0"};
+  var AGE_ORDER = ["Under 18","18–20","21–24","25–29","30–35","36+"];
+  var EDU_SHORT = {
+    "No formal education":"None","Primary (1st-6th)":"Primary",
+    "Lower Secondary / College (7th-9th)":"College","Upper Secondary / Lycee":"Lycee",
+    "Baccalaureate (Bac)":"Bac","Vocational Training / OFPPT":"OFPPT",
+    "Advanced Technician / BTS":"BTS","Bachelor Degree (Bac+3)":"Licence",
+    "Master Degree (Bac+5)":"Master","PhD / Doctorat":"PhD",
+    "Baccalaureate":"Bac","Bachelor (Bac+3)":"Licence","Master (Bac+5)":"Master",
+  };
+
+  function StatCard({ icon, label, value, sub, col }) {
+    col = col || C.teal;
+    return (
+      <div style={{ background:C.card, borderRadius:12, padding:"14px 12px",
+          border:"1px solid "+C.bdr, textAlign:"center",
+          boxShadow:"0 0 16px "+col+"18" }}>
+        <div style={{ fontSize:22, marginBottom:4 }}>{icon}</div>
+        <div style={{ fontSize:24, fontWeight:900, color:col }}>{value}</div>
+        <div style={{ fontSize:10, fontWeight:700, color:C.wh, marginTop:2 }}>{label}</div>
+        {sub && <div style={{ fontSize:9, color:C.mu, marginTop:2 }}>{sub}</div>}
+      </div>
+    );
+  }
+
+  function BarRow({ label, n, total, col }) {
+    var w = pct(n, total);
+    col = col || C.teal;
+    return (
+      <div style={{ marginBottom:8 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, marginBottom:3 }}>
+          <span style={{ color:C.wh, fontWeight:600 }}>{label}</span>
+          <span style={{ color:col, fontWeight:800 }}>{n} ({w}%)</span>
+        </div>
+        <div style={{ height:7, background:"rgba(255,255,255,.06)", borderRadius:99, overflow:"hidden" }}>
+          <div style={{ height:"100%", width:w+"%", background:col, borderRadius:99, transition:"width .6s" }}/>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Overview */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
+        <StatCard icon="👥" label="Total Candidates" value={total} col={C.teal}/>
+        <StatCard icon="⚡" label="Avg Employability" value={avgEmpl+"%"}
+          col={avgEmpl>=65?C.gr:avgEmpl>=45?C.am:C.re}/>
+        <StatCard icon="🎯" label="Top Holland Type"
+          value={Object.keys(hollands).sort(function(a,b){return hollands[b]-hollands[a];})[0]||"—"}
+          col={C.gold}/>
+      </div>
+
+      {/* Gender */}
+      <Card>
+        <SectionHead icon="🧑" title="Gender Distribution"/>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
+          {["Male","Female"].map(function(g){
+            var gc={"Male":C.teal,"Female":"#e879a0"};
+            var gi={"Male":"👤","Female":"👩"};
+            return (
+              <div key={g} style={{ textAlign:"center", padding:"10px 6px",
+                  background:gc[g]+"14", borderRadius:10, border:"1px solid "+gc[g]+"33" }}>
+                <div style={{ fontSize:20 }}>{gi[g]}</div>
+                <div style={{ fontSize:18, fontWeight:900, color:gc[g] }}>{genders[g]||0}</div>
+                <div style={{ fontSize:9, color:C.mu }}>{g} ({pct(genders[g]||0,total)}%)</div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      {/* Age */}
+      <Card>
+        <SectionHead icon="📅" title="Age Distribution"/>
+        {AGE_ORDER.map(function(a){
+          var cols = {"Under 18":C.teal,"18–20":"#4ade80","21–24":C.gold,"25–29":C.am,"30–35":C.re,"36+":C.pu};
+          return <BarRow key={a} label={a} n={ages[a]||0} total={total} col={cols[a]||C.teal}/>;
+        })}
+      </Card>
+
+      {/* Holland */}
+      <Card>
+        <SectionHead icon="🎯" title="Holland Career Profile (Top Code)"/>
+        {["R","I","A","S","E","C"].map(function(k){
+          return <BarRow key={k} label={k+" — "+(HN[k]||k)} n={hollands[k]||0} total={total} col={HC[k]||C.teal}/>;
+        })}
+      </Card>
+
+      {/* Education */}
+      <Card>
+        <SectionHead icon="🎓" title="Education Level"/>
+        {Object.keys(edus).sort(function(a,b){ return edus[b]-edus[a]; }).map(function(e){
+          return <BarRow key={e} label={EDU_SHORT[e]||e} n={edus[e]} total={total} col={C.teal}/>;
+        })}
+      </Card>
+
+      {/* Top Regions */}
+      <Card>
+        <SectionHead icon="📍" title="Top Regions"/>
+        {Object.keys(regions).sort(function(a,b){ return regions[b]-regions[a]; }).slice(0,8).map(function(r,i){
+          var cols=[C.teal,C.gold,C.pu,C.gr,C.am,C.re,"#4080e0","#20a0b0"];
+          return <BarRow key={r} label={r} n={regions[r]} total={total} col={cols[i%cols.length]}/>;
+        })}
+      </Card>
+    </div>
+  );
 }
+
+/* ─── ROOT APP ───────────────────────────────────────────────────────────── */
 function App() {
   injectCSS();
   var [lang, setLang] = useState("en");
