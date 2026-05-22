@@ -4,9 +4,23 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
   <title>CareerMap — Orientation Professionnelle</title>
+  <!-- QR Code library -->
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json"/>
+  <meta name="theme-color" content="#1aabaa"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="CareerMap"/>
+  <link rel="apple-touch-icon" href="icon.svg"/>
+  <meta name="description" content="Career guidance and assessment platform"/>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <style>
     *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
     html,body,#root{width:100%;height:100%;overflow:hidden}
@@ -28,6 +42,30 @@
   </div>
   <div id="root" style="width:100%;height:100%"></div>
   <script type="text/babel" data-presets="react">
+/* ═══════════════════════════════════════════════════════════
+   FIREBASE CONFIG — paste your values here after setup
+   Leave as-is if you haven't set up Firebase yet
+═══════════════════════════════════════════════════════════ */
+var FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyBnyXI8cXpsNwpFKOG4pcybrsILh80qIqI",
+  authDomain:        "careermap-9f485.firebaseapp.com",
+  projectId:         "careermap-9f485",
+  storageBucket:     "careermap-9f485.firebasestorage.app",
+  messagingSenderId: "586931571669",
+  appId:             "1:586931571669:web:8c8b7ad3b44d11524b8b5c"
+};
+/* ═══════════════════════════════════════════════════════════ */
+
+var _db = null;
+(function(){
+  try {
+    if (FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith("YOUR_")) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      _db = firebase.firestore();
+    }
+  } catch(e) { console.warn("Firebase not configured:", e.message); }
+})();
+
 const { useState, useEffect, useRef } = React;
 
 /* ─── INJECT CSS ─────────────────────────────────────────────────────────── */
@@ -55,6 +93,7 @@ function injectCSS() {
     "button:active{transform:scale(.95)!important}",
     "input,select,textarea{font-family:inherit}",
     "input:focus,select:focus,textarea:focus{outline:none}",
+    "select option{background:#0d1f33;color:#f0f4f8}",
     "@media print{.noprint{display:none!important}html,body,#root{height:auto!important;overflow:visible!important}body{background:#fff!important}}",
   ].join("");
   document.head.appendChild(el);
@@ -2434,7 +2473,7 @@ function AdminDash({ lang, setLang, user, onLogout, cands, onView, advisors, onA
         </div>
       </div>
         {tab === "candidates" && (
-          <div>
+          <div style={{ flex:1, overflowY:"auto", padding:"12px 0" }}>
             <Card>
               <SectionHead icon="👥" title="All Candidates"/>
               <div style={{ display:"flex", gap:8, marginBottom:11, alignItems:"center" }}>
@@ -2492,7 +2531,7 @@ function AdminDash({ lang, setLang, user, onLogout, cands, onView, advisors, onA
         )}
 
         {tab === "advisors" && (
-          <div>
+          <div style={{ flex:1, overflowY:"auto", padding:"12px 0" }}>
             <Card>
               <SectionHead icon="➕" title="Create Advisor Account"/>
               <p style={{ fontSize:10, color:C.mu, marginBottom:10, lineHeight:1.6 }}>
@@ -2536,7 +2575,10 @@ function AdminDash({ lang, setLang, user, onLogout, cands, onView, advisors, onA
                           style={{ padding:"4px 10px", background:copied===adv.code?C.grG:C.cardB, color:copied===adv.code?C.gr:C.muB, border:"1px solid "+(copied===adv.code?C.gr:C.bdr), borderRadius:7, fontSize:9, fontWeight:700 }}>
                           {copied === adv.code ? "Copied ✓" : "Copy"}
                         </button>
-                        <button onClick={function() { onDeleteAdvisor(i); }}
+                        <button onClick={function() {
+                            if (!window.confirm('Delete advisor "' + adv.name + '"?\nThis cannot be undone.')) return;
+                            onDeleteAdvisor(i);
+                          }}
                           style={{ padding:"4px 8px", background:"rgba(220,76,60,.1)", color:C.re, border:"1px solid "+C.re+"33", borderRadius:7, fontSize:9, fontWeight:700 }}>
                           Del
                         </button>
@@ -2549,7 +2591,9 @@ function AdminDash({ lang, setLang, user, onLogout, cands, onView, advisors, onA
         )}
 
         {tab === "stats" && (
-          <AdminStats src={src} lang={lang} ar={ar}/>
+          <div style={{ flex:1, overflowY:"auto", padding:"12px 0" }}>
+            <AdminStats src={src} lang={lang} ar={ar}/>
+          </div>
         )}
       </div>
       {localReport && <ReportViewer html={localReport} onClose={function(){ setLocalReport(null); }}/>}
@@ -2693,145 +2737,62 @@ function AdminStats({ src, lang, ar }) {
       </Card>
     </div>
   );
-}function AdminStats({ src, lang, ar }) {
-  if (!src || src.length === 0) {
-    return <Card><p style={{ textAlign:"center", color:C.mu, padding:20 }}>No candidate data yet.</p></Card>;
-  }
+}
+function ShareQRModal({ onClose }) {
+  var canvasRef = React.useRef(null);
+  var url = (function() {
+    var u = window.location.href.replace(/[?#].*$/, '').replace(/index\.html$/, '');
+    return u.endsWith('/') ? u : u + '/';
+  })();
 
-  /* ── Compute stats ── */
-  function count(arr) {
-    var m = {};
-    arr.forEach(function(v){ m[v] = (m[v]||0) + 1; });
-    return m;
-  }
-  function pct(n, total) { return total ? Math.round(n/total*100) : 0; }
-
-  var total = src.length;
-  var genders  = count(src.map(function(c){ return (c.profile&&c.profile.gender)||"Unknown"; }));
-  var ages     = count(src.map(function(c){ return (c.profile&&c.profile.age)||"Unknown"; }));
-  var regions  = count(src.map(function(c){ return (c.profile&&c.profile.region)||"Unknown"; }));
-  var edus     = count(src.map(function(c){ return (c.profile&&c.profile.edu)||"Unknown"; }));
-  var hollands = count(src.map(function(c){
-    var h = c.scores&&c.scores.h||{};
-    return Object.keys(h).sort(function(a,b){ return (h[b]||0)-(h[a]||0); })[0]||"?";
-  }));
-  var avgEmpl = Math.round(src.reduce(function(sum,c){
-    var s=c.scores&&c.scores.s||{};
-    var v=Object.values(s);
-    return sum+(v.length?v.reduce(function(a,b){return a+b;},0)/v.length:0);
-  },0)/total);
-
-  var HN = {R:"Realistic",I:"Investigative",A:"Artistic",S:"Social",E:"Enterprising",C:"Conventional"};
-  var HC = {R:"#4080e0",I:"#4080e0",A:"#d4a328",S:"#20b060",E:"#9050d0",C:"#20a0b0"};
-  var AGE_ORDER = ["Under 18","18–20","21–24","25–29","30–35","36+"];
-  var EDU_SHORT = {
-    "No formal education":"None","Primary (1st-6th)":"Primary",
-    "Lower Secondary / College (7th-9th)":"College","Upper Secondary / Lycee":"Lycee",
-    "Baccalaureate (Bac)":"Bac","Vocational Training / OFPPT":"OFPPT",
-    "Advanced Technician / BTS":"BTS","Bachelor Degree (Bac+3)":"Licence",
-    "Master Degree (Bac+5)":"Master","PhD / Doctorat":"PhD",
-    "Baccalaureate":"Bac","Bachelor (Bac+3)":"Licence","Master (Bac+5)":"Master",
-  };
-
-  function StatCard({ icon, label, value, sub, col }) {
-    col = col || C.teal;
-    return (
-      <div style={{ background:C.card, borderRadius:12, padding:"14px 12px",
-          border:"1px solid "+C.bdr, textAlign:"center",
-          boxShadow:"0 0 16px "+col+"18" }}>
-        <div style={{ fontSize:22, marginBottom:4 }}>{icon}</div>
-        <div style={{ fontSize:24, fontWeight:900, color:col }}>{value}</div>
-        <div style={{ fontSize:10, fontWeight:700, color:C.wh, marginTop:2 }}>{label}</div>
-        {sub && <div style={{ fontSize:9, color:C.mu, marginTop:2 }}>{sub}</div>}
-      </div>
-    );
-  }
-
-  function BarRow({ label, n, total, col }) {
-    var w = pct(n, total);
-    col = col || C.teal;
-    return (
-      <div style={{ marginBottom:8 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, marginBottom:3 }}>
-          <span style={{ color:C.wh, fontWeight:600 }}>{label}</span>
-          <span style={{ color:col, fontWeight:800 }}>{n} ({w}%)</span>
-        </div>
-        <div style={{ height:7, background:"rgba(255,255,255,.06)", borderRadius:99, overflow:"hidden" }}>
-          <div style={{ height:"100%", width:w+"%", background:col, borderRadius:99, transition:"width .6s" }}/>
-        </div>
-      </div>
-    );
-  }
+  useEffect(function() {
+    if (!canvasRef.current || !window.QRCode) return;
+    QRCode.toCanvas(canvasRef.current, url, {
+      width: 240, margin: 2,
+      color: { dark: '#06111f', light: '#ffffff' }
+    });
+  }, []);
 
   return (
-    <div>
-      {/* Overview */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14 }}>
-        <StatCard icon="👥" label="Total Candidates" value={total} col={C.teal}/>
-        <StatCard icon="⚡" label="Avg Employability" value={avgEmpl+"%"}
-          col={avgEmpl>=65?C.gr:avgEmpl>=45?C.am:C.re}/>
-        <StatCard icon="🎯" label="Top Holland Type"
-          value={Object.keys(hollands).sort(function(a,b){return hollands[b]-hollands[a];})[0]||"—"}
-          col={C.gold}/>
+    <div onClick={onClose} style={{
+      position:'fixed', inset:0, zIndex:99999,
+      background:'#06111f',
+      display:'flex', flexDirection:'column',
+      alignItems:'center', justifyContent:'center',
+      gap:20, cursor:'pointer'
+    }}>
+      {/* Compass icon */}
+      <svg width="64" height="64" viewBox="0 0 512 512">
+        <circle cx="256" cy="256" r="248" fill="none" stroke="#1aabaa" strokeWidth="18"/>
+        <polygon points="256,90 242,256 256,240 270,256" fill="#1aabaa"/>
+        <polygon points="256,422 242,256 256,272 270,256" fill="#0d7a79"/>
+        <polygon points="422,256 256,242 272,256 256,270" fill="#0d7a79"/>
+        <polygon points="90,256 256,242 240,256 256,270" fill="#1aabaa"/>
+        <circle cx="256" cy="256" r="18" fill="#f0f4f8"/>
+        <circle cx="256" cy="256" r="8" fill="#1aabaa"/>
+      </svg>
+
+      <div style={{ color:'#1aabaa', fontSize:30, fontWeight:700, letterSpacing:3, textTransform:'uppercase' }}>
+        CareerMap
       </div>
 
-      {/* Gender */}
-      <Card>
-        <SectionHead icon="🧑" title="Gender Distribution"/>
-        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:10 }}>
-          {["Male","Female"].map(function(g){
-            var gc={"Male":C.teal,"Female":"#e879a0"};
-            var gi={"Male":"👤","Female":"👩"};
-            return (
-              <div key={g} style={{ textAlign:"center", padding:"10px 6px",
-                  background:gc[g]+"14", borderRadius:10, border:"1px solid "+gc[g]+"33" }}>
-                <div style={{ fontSize:20 }}>{gi[g]}</div>
-                <div style={{ fontSize:18, fontWeight:900, color:gc[g] }}>{genders[g]||0}</div>
-                <div style={{ fontSize:9, color:C.mu }}>{g} ({pct(genders[g]||0,total)}%)</div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      <div style={{ background:'#fff', borderRadius:16, padding:14, border:'3px solid #1aabaa', boxShadow:'0 0 40px #1aabaa44' }}>
+        <canvas ref={canvasRef}/>
+      </div>
 
-      {/* Age */}
-      <Card>
-        <SectionHead icon="📅" title="Age Distribution"/>
-        {AGE_ORDER.map(function(a){
-          var cols = {"Under 18":C.teal,"18–20":"#4ade80","21–24":C.gold,"25–29":C.am,"30–35":C.re,"36+":C.pu};
-          return <BarRow key={a} label={a} n={ages[a]||0} total={total} col={cols[a]||C.teal}/>;
-        })}
-      </Card>
+      <div style={{ color:'#6b8aaa', fontSize:14, letterSpacing:1 }}>Scan to open the app</div>
 
-      {/* Holland */}
-      <Card>
-        <SectionHead icon="🎯" title="Holland Career Profile (Top Code)"/>
-        {["R","I","A","S","E","C"].map(function(k){
-          return <BarRow key={k} label={k+" — "+(HN[k]||k)} n={hollands[k]||0} total={total} col={HC[k]||C.teal}/>;
-        })}
-      </Card>
-
-      {/* Education */}
-      <Card>
-        <SectionHead icon="🎓" title="Education Level"/>
-        {Object.keys(edus).sort(function(a,b){ return edus[b]-edus[a]; }).map(function(e){
-          return <BarRow key={e} label={EDU_SHORT[e]||e} n={edus[e]} total={total} col={C.teal}/>;
-        })}
-      </Card>
-
-      {/* Top Regions */}
-      <Card>
-        <SectionHead icon="📍" title="Top Regions"/>
-        {Object.keys(regions).sort(function(a,b){ return regions[b]-regions[a]; }).slice(0,8).map(function(r,i){
-          var cols=[C.teal,C.gold,C.pu,C.gr,C.am,C.re,"#4080e0","#20a0b0"];
-          return <BarRow key={r} label={r} n={regions[r]} total={total} col={cols[i%cols.length]}/>;
-        })}
-      </Card>
+      <div style={{
+        marginTop:24, color:'#1a3a55', fontSize:12,
+        border:'1px solid #1a3a55', borderRadius:20,
+        padding:'6px 18px', letterSpacing:1
+      }}>
+        tap anywhere to close
+      </div>
     </div>
   );
 }
 
-/* ─── ROOT APP ───────────────────────────────────────────────────────────── */
 function App() {
   injectCSS();
   var [lang, setLang] = useState("en");
@@ -2839,11 +2800,36 @@ function App() {
   var [user, setUser] = useState(null);
   var [profile, setProfile] = useState(null);
   var [scores, setScores] = useState({ h:{}, b:{}, s:{} });
-  var [cands, setCands] = useState([]);
+  var [cands, setCands] = useState(function() { try { return JSON.parse(localStorage.getItem("cm_cands")||"[]"); } catch(e){ return []; } });
   var [viewIdx, setViewIdx] = useState(null);
-  var [advisors, setAdvisors] = useState([]);
+  var [advisors, setAdvisors] = useState(function() { try { return JSON.parse(localStorage.getItem("cm_advisors")||"[]"); } catch(e){ return []; } });
   var [resultCode, setResultCode] = useState("");
   var [reportHTML, setReportHTML] = useState(null);
+  var [showQR, setShowQR] = useState(false);
+
+  // Firebase real-time sync (when configured), otherwise localStorage
+  useEffect(function() {
+    var unsubA, unsubC;
+    try {
+      if (!_db) throw new Error("no db");
+      unsubA = _db.collection("advisors").onSnapshot(
+        function(snap) { try { setAdvisors(snap.docs.map(function(d){ return Object.assign({ _docId: d.id }, d.data()); })); } catch(e){} },
+        function(e){ console.error("advisors:", e); }
+      );
+      unsubC = _db.collection("candidates").onSnapshot(
+        function(snap) { try { setCands(snap.docs.map(function(d){ return Object.assign({ _docId: d.id }, d.data()); })); } catch(e){} },
+        function(e){ console.error("candidates:", e); }
+      );
+    } catch(e) {
+      try { var a = JSON.parse(localStorage.getItem("cm_advisors")||"[]"); if(a.length) setAdvisors(a); } catch(err){}
+      try { var c = JSON.parse(localStorage.getItem("cm_cands")||"[]"); if(c.length) setCands(c); } catch(err){}
+    }
+    return function(){ try { if(unsubA) unsubA(); if(unsubC) unsubC(); } catch(e){} };
+  }, []);
+
+  // localStorage fallback persistence (only when no Firebase)
+  useEffect(function() { if (!_db) { try { localStorage.setItem("cm_cands", JSON.stringify(cands)); } catch(e){} } }, [cands]);
+  useEffect(function() { if (!_db) { try { localStorage.setItem("cm_advisors", JSON.stringify(advisors)); } catch(e){} } }, [advisors]);
 
   function setLangDir(l) {
     setLang(l);
@@ -2886,8 +2872,15 @@ function App() {
       name: user.name, id: user.id, code: code,
       profile: Object.assign({}, profile || {}, { name:user.name, id:user.id }),
       scores: sc,
+      savedAt: new Date().toISOString()
     };
-    setCands(function(p) { return p.concat([rec]); });
+    if (_db) {
+      _db.collection("candidates").add(rec).catch(function(e){ console.error("save candidate:", e); });
+      // onSnapshot will update cands automatically; also set locally for instant UI
+      setCands(function(p) { return p.concat([rec]); });
+    } else {
+      setCands(function(p) { return p.concat([rec]); });
+    }
     setScreen("code");
   }
 
@@ -2905,8 +2898,31 @@ function App() {
 
   function wrap(el) {
     return (
-      <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", overflow:"hidden" }}>
+      <div style={{ width:"100%", height:"100%", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
         {el}
+        {/* Floating QR share button */}
+        <button
+          onClick={function(){ setShowQR(true); }}
+          title="Share QR Code"
+          style={{
+            position:"fixed", bottom:20, right:20, zIndex:9000,
+            width:48, height:48, borderRadius:"50%",
+            background:"#1aabaa", border:"none", cursor:"pointer",
+            display:"flex", alignItems:"center", justifyContent:"center",
+            boxShadow:"0 4px 16px #1aabaa66",
+            padding:0
+          }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#06111f" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"/>
+            <rect x="14" y="3" width="7" height="7" rx="1"/>
+            <rect x="3" y="14" width="7" height="7" rx="1"/>
+            <rect x="14" y="14" width="3" height="3"/>
+            <rect x="18" y="14" width="3" height="3"/>
+            <rect x="14" y="18" width="3" height="3"/>
+            <rect x="18" y="18" width="3" height="3"/>
+          </svg>
+        </button>
+        {showQR && <ShareQRModal onClose={function(){ setShowQR(false); }}/>}
       </div>
     );
   }
@@ -2930,8 +2946,21 @@ function App() {
   </div>);
   if (screen === "admin")   return wrap(<div style={{ position:"relative", flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
     <AdminDash lang={lang} setLang={setLangDir} user={user} onLogout={onLogout} cands={cands} onView={onView} advisors={advisors}
-      onAddAdvisor={function(a){ setAdvisors(function(p){ return p.concat([a]); }); }}
-      onDeleteAdvisor={function(i){ setAdvisors(function(p){ return p.filter(function(_,x){ return x!==i; }); }); }}
+      onAddAdvisor={function(a){
+        if (_db) {
+          _db.collection("advisors").add(a).catch(function(e){ alert("Error saving advisor: " + e.message); });
+        } else {
+          setAdvisors(function(p){ return p.concat([a]); });
+        }
+      }}
+      onDeleteAdvisor={function(i){
+        var adv = advisors[i];
+        if (_db && adv && adv._docId) {
+          _db.collection("advisors").doc(adv._docId).delete().catch(function(e){ alert("Error deleting: " + e.message); });
+        } else {
+          setAdvisors(function(p){ return p.filter(function(_,x){ return x!==i; }); });
+        }
+      }}
       onShowReport={showReport}/>
     {viewer}
   </div>);
@@ -2957,6 +2986,14 @@ _root.render(React.createElement(App));
       var l = document.getElementById('cm-loading');
       if(l) l.style.display = 'none';
     }, 5000);
+  </script>
+  <script>
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('sw.js')
+          .catch(function(e){ console.warn('SW registration failed', e); });
+      });
+    }
   </script>
 </body>
 </html>
